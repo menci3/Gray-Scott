@@ -43,8 +43,10 @@ void saveFramesCuda(int step, float *d_V, int grid_size, int grid_size_whole) {
         img[i] = (unsigned char)(val * 255);
     }
 
+    printf("Printing CUDA frame step %d\n", (step/100));
+
     char filename[64];
-    sprintf(filename, "frames/frame_%04d.png", (step/100) + 1);
+    sprintf(filename, "frames/frame_%04d.png", (step/100));
     stbi_write_png(filename, grid_size, grid_size, 1, img, grid_size);
 
     free(h_frame);
@@ -226,7 +228,7 @@ float GrayScottSolverCUDA(float *h_U, float *h_V,
     size_t shared_mem_size = 2 * (block_size.x + 2) * (block_size.y + 2) * sizeof(float);
 
     // Main computation loop
-    for (int n = 0; n < steps; n++) {
+    for (int n = 0; n <= steps; n++) {
 
         GrayScottKernel<<<grid_dims, block_size, shared_mem_size>>>(
             d_U, d_V, d_Unew, d_Vnew, Du, Dv, F, k, dt, grid_size);
@@ -245,7 +247,7 @@ float GrayScottSolverCUDA(float *h_U, float *h_V,
         d_V = d_Vnew;
         d_Vnew = d_temp;
 
-        if (visualize && n % 100 == 0) {
+        if (visualize && n > 0 && n % 100 == 0) {
            saveFramesCuda(n, d_V, grid_size, grid_size_whole);
         }
     }
@@ -276,7 +278,7 @@ int main(int argc, char *argv[]) {
     int run_sequential = 0;
     int run_parallel = 0;
 
-    bool visualize = true;  // For saving frames, false when benchmarking
+    bool visualize = false;  // For saving frames, false when benchmarking
 
     // Simulation parameters
     float Du = 0.16f;
@@ -369,17 +371,45 @@ int main(int argc, char *argv[]) {
         int grid_sizes[] = {256, 512, 1024, 2048, 4096};
         int num_grid_sizes = 5;
 
-        // Define different block sizes to test
         dim3 block_sizes[] = {
-            dim3(8, 8),
-            dim3(16, 16),
-            dim3(32, 8),
-            dim3(32, 16),
-            dim3(32, 32)
-
-            // TODO: Add more?
-        };
-        int num_block_sizes = 5;
+        // Square blocks
+        dim3(8, 8),
+        dim3(16, 16),
+        dim3(32, 32),
+        
+        // Wide rectangular blocks (width > height)
+        dim3(32, 4),
+        dim3(32, 8), 
+        dim3(32, 16),
+        dim3(64, 4), 
+        dim3(64, 8), 
+        dim3(64, 16),
+        dim3(128, 8),
+        
+        // Tall rectangular blocks (height > width)
+        dim3(4, 32),
+        dim3(8, 32), 
+        dim3(16, 32),
+        dim3(4, 64), 
+        dim3(8, 64), 
+        dim3(16, 64),
+        dim3(8, 128),
+        
+        // "Stripes" - very wide or very tall blocks
+        dim3(256, 2),
+        dim3(256, 4),
+        dim3(2, 256),
+        dim3(4, 256),
+        
+        // Non-power-of-2 configurations
+        dim3(24, 24),
+        dim3(12, 48),
+        dim3(48, 12),
+        dim3(18, 36),
+        dim3(36, 18),
+        dim3(19, 19),
+    };
+    int num_block_sizes = sizeof(block_sizes) / sizeof(dim3);
 
         printf("Gray-Scott CUDA Benchmarking\n");
         printf("Running %d steps for each configuration\n\n", steps);
